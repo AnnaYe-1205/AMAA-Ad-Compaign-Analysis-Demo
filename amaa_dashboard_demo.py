@@ -300,35 +300,40 @@ def show_history_analysis():
     # 研究特征筛选
     if not filtered_data.empty:
         exclude_cols = [col for col in filtered_data.columns if '日期' in col or 'date' in col.lower()]
-        feature_options = [col for col in filtered_data.columns if col not in exclude_cols]
+        all_features = [col for col in filtered_data.columns if col not in exclude_cols]
         
-        selected_features = st.sidebar.multiselect(
-            "研究特征筛选",
-            options=feature_options,
-            default=feature_options[:3] if len(feature_options) >= 3 else feature_options
+        # 1. 先选择目标值
+        target_options = all_features.copy()
+        default_targets = target_options[-2:] if len(target_options) >= 2 else target_options
+        selected_targets = st.sidebar.multiselect(
+            "研究目标值选择",
+            options=target_options,
+            default=default_targets
         )
         
-        # 研究控制变量
-        control_options = [col for col in filtered_data.columns if col not in exclude_cols and col not in selected_features]
+        # 2. 计算所有非目标值特征（用于效应值计算）
+        all_non_target_features = [col for col in all_features if col not in selected_targets]
+        
+        # 3. 选择控制变量
+        control_options = all_non_target_features.copy()
         selected_controls = st.sidebar.multiselect(
             "研究控制变量",
             options=control_options,
             default=[]
         )
         
-        # 研究目标值选择 - 默认选择倒数两个列
-        target_options = [col for col in filtered_data.columns if col not in exclude_cols and col not in selected_features and col not in selected_controls]
-        default_targets = target_options[-2:] if len(target_options) >= 2 else target_options
-        
-        selected_targets = st.sidebar.multiselect(
-            "研究目标值选择",
-            options=target_options,
-            default=default_targets
+        # 4. 选择研究特征
+        feature_options = [col for col in all_non_target_features if col not in selected_controls]
+        selected_features = st.sidebar.multiselect(
+            "研究特征筛选",
+            options=feature_options,
+            default=feature_options[:3] if len(feature_options) >= 3 else feature_options
         )
     else:
         selected_features = []
         selected_controls = []
         selected_targets = []
+        all_non_target_features = []
     
     # 主布局
     col1, col2 = st.columns([3, 2])
@@ -377,10 +382,10 @@ def show_history_analysis():
         # 效应值趋势图容器
         with st.container():
             st.subheader("效应值趋势图")
-            if not filtered_data.empty and selected_targets and selected_features and selected_delays:
-                # 生成统一的效应数据
+            if not filtered_data.empty and selected_targets and all_non_target_features and selected_delays:
+                # 生成统一的效应数据 - 使用所有非目标值特征
                 unified_effect_data = generate_unified_effect_data(
-                    selected_targets, selected_features, selected_delays, 
+                    selected_targets, all_non_target_features, selected_delays, 
                     date_range_key, selected_controls
                 )
                 
@@ -418,26 +423,26 @@ def show_history_analysis():
         # 效应值指标容器
         with st.container():
             st.subheader("📈 效应值指标")
-            if not filtered_data.empty and selected_targets and selected_features:
-                # 生成统一的效应数据
+            if not filtered_data.empty and selected_targets and all_non_target_features:
+                # 生成统一的效应数据 - 使用所有非目标值特征
                 unified_effect_data = generate_unified_effect_data(
-                    selected_targets, selected_features, selected_delays, 
+                    selected_targets, all_non_target_features, selected_delays, 
                     date_range_key, selected_controls
                 )
                 
                 effect_metrics = unified_effect_data['metrics']
                 
-                # 先计算每个目标在所有特征上的平均值
+                # 先计算每个目标在所有非目标值特征上的平均值
                 target_avg_values = {}
                 for target in selected_targets:
-                    target_roi_values = [effect_metrics[feature][target]['roi'] for feature in selected_features]
-                    target_contrib_values = [effect_metrics[feature][target]['contribution'] for feature in selected_features]
+                    target_roi_values = [effect_metrics[feature][target]['roi'] for feature in all_non_target_features]
+                    target_contrib_values = [effect_metrics[feature][target]['contribution'] for feature in all_non_target_features]
                     target_avg_values[target] = {
                         'roi': np.mean(target_roi_values),
                         'contribution': np.mean(target_contrib_values)
                     }
                 
-                # 可滚动容器
+                # 可滚动容器 - 只显示选中的研究特征
                 with st.container(height=680):
                     for feature in selected_features:
                         # 特征标题
@@ -486,6 +491,7 @@ def show_history_analysis():
                                 """, unsafe_allow_html=True)
                         
                         st.markdown("---")
+
 
 def show_future_simulation():
     """显示未来效果模拟页面"""
